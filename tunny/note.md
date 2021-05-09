@@ -1,20 +1,21 @@
-# tunny 是一个Goroutine 对协程库, 可以固定Goroutine 数量
+# tunny
 
-不保证执行顺序
+可以固定Goroutine 数量的协程库, 不保证执行顺序
+核心文件是 tunny.go 与 worker.go。
 
-核心文件就是tunny.go与worker.go
-
-tunny 是通过 reqChan 管道来联系 poo l与 worker ，worker 的数量与协程池的大小相等，在初始化协程池时决定；各个 worker 竞争地获取 reqChan 中的数据，而后处理，最后返回给 pool
+tunny 通过 reqChan 管道联系 pool 与 worker;
+worker 数量与协程池的大小相等，在初始化协程池时决定；
+各个 worker 竞争地获取 reqChan 中的数据，而后处理，最后返回给 pool;
 
 ```
 type Pool struct {
-      queuedJobs int64 // 表明pool当前积压的job数量
+      queuedJobs int64 // 表明 pool 当前积压的job数量
   
-      ctor    func() Worker // 表明worker具体的构造函数
-      workers []*workerWrapper // pool实际拥有的worker
-      reqChan chan workRequest // 是pool与全部worker进行通讯的管道，worker与pool都使用相同的reqChan指针
+      ctor    func() Worker // worker 具体的构造函数
+      workers []*workerWrapper // pool 实际拥有的worker
+      reqChan chan workRequest // pool 与全部 worker 进行通讯的管道，worker与pool都使用相同的reqChan指针
   
-      workerMut sync.Mutex // 在pool进行SetSize操做时使用的，防止不一样协程同时对size进行操做
+      workerMut sync.Mutex // pool 进行 SetSize 操做时使用的，防止不一样协程同时对size进行操做
 }
 
 // Pool 构造函数
@@ -24,12 +25,11 @@ func New(n int, ctor func() Worker) *Pool {
           reqChan: make(chan workRequest),// 没有Buffer 的 Channel
       }
       p.SetSize(n)
-                                                                                                                               
       return p
 }
 ```
 
-Worker Interface 
+Worker 接口
 ```
 type Worker interface {
       Process(interface{}) interface{}
@@ -40,7 +40,7 @@ type Worker interface {
 ```
 
 有两种Worker 
-1. 
+1. 闭包 Worker 
 ```
 type closureWorker struct {
      processor func(interface{}) interface{}
@@ -50,7 +50,8 @@ func (w *closureWorker) Process(payload interface{}) interface{} {
 	return w.processor(payload)
 }
 ```
-闭包worker，这个worker是最经常使用的一种worker，它主要执行初始化NewFunc 时赋予它的processeor函数来完成工做；
+
+闭包worker，经常使用的一种worker，主要执行初始化NewFunc 时赋予它的 processeor 函数来完成；
 
 ```
 func NewFunc(n int, f func(interface{}) interface{}) *Pool {
@@ -62,7 +63,8 @@ func NewFunc(n int, f func(interface{}) interface{}) *Pool {
 }
 ```
 
-2
+2. CallBack Worker
+
 ```
 func NewCallback(n int) *Pool {
 	return New(n, func() Worker {
@@ -80,7 +82,8 @@ func (w *callbackWorker) Process(payload interface{}) interface{} {
 }
 ```
 
-SetSize 函数会初始化 workers, 实际就是newWorkerWrapper, reqChan 用的是同一个
+SetSize 函数会初始化 workers, 实际是 newWorkerWrapper, reqChan 用的是同一个
+
 ```
 for i := lWorkers; i < n; i++ {
 	p.workers = append(p.workers, newWorkerWrapper(p.reqChan, p.ctor()))
@@ -102,6 +105,7 @@ func newWorkerWrapper( reqChan chan<- workRequest, worker Worker,) *workerWrappe
 	return &w
 }
 ```
+
 以下两段代码也连着一起读才能理解·
 ```
 func (p *Pool) Process(payload interface{}) interface{} {
@@ -167,14 +171,12 @@ func (w *workerWrapper) run() {
 	}
 }
 ```
-步骤1, Worker Run 就无脑塞入workRequest
-步骤2, pool.Process 阻塞等待reqChan , 此时相当于挑选了一个worker, 谁竞争拿到就用谁的 workerRequest
-步骤3, pool.Process 里面 将payload 塞入workerReuqst.jobChan 触发 Run 下一步执行
-步骤4, 执行对应的Worker.Process, worker执行下一步的Process
-步骤5. worker.Process(payload) 有结果塞进 workerRequest.retChan
-步骤6. pool.Process 阻塞的retChan 有响应， 就继续执行
 
+总结之后
 
-
-
-
+* 步骤1, Worker Run 无脑塞入 workerRequest
+* 步骤2, Pool.Process 阻塞等待 reqChan , 此时相当于挑选了一个 worker, 谁竞争拿到就用谁的 workerRequest
+* 步骤3, Pool.Process 里面 将 payload 塞入workerReuqst.jobChan 触发 Run 下一步执行
+* 步骤4, 执行对应的Worker.Process, worker执行下一步的Process
+* 步骤5. worker.Process(payload) 有结果塞进 workerRequest.retChan
+* 步骤6. pool.Process 阻塞的retChan 有响应， 就继续执行
