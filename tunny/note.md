@@ -1,11 +1,6 @@
 # tunny
-
-可以固定Goroutine 数量的协程库, 不保证执行顺序
+Go 协程池库, 代码简洁，精悍。 可固定 Goroutine 数量的协程池, 不保证执行顺序
 核心文件是 tunny.go 与 worker.go。
-
-tunny 通过 reqChan 管道联系 pool 与 worker;
-worker 数量与协程池的大小相等，在初始化协程池时决定；
-各个 worker 竞争地获取 reqChan 中的数据，而后处理，最后返回给 pool;
 
 ```
 type Pool struct {
@@ -29,6 +24,11 @@ func New(n int, ctor func() Worker) *Pool {
 }
 ```
 
+tunny 通过 reqChan 管道联系 Pool 与 Worker;
+Worker 数量与协程池的大小相等，初始化协程池时决定；
+各个 Worker 竞争地从 reqChan 中获取数据，并处理，最后返回给 Pool;
+
+
 Worker 接口
 ```
 type Worker interface {
@@ -51,7 +51,7 @@ func (w *closureWorker) Process(payload interface{}) interface{} {
 }
 ```
 
-闭包worker，经常使用的一种worker，主要执行初始化NewFunc 时赋予它的 processeor 函数来完成；
+闭包 Worker，经常使用的一种worker，主要执行初始化 NewFunc 时赋予它的 processeor 函数来完成；
 
 ```
 func NewFunc(n int, f func(interface{}) interface{}) *Pool {
@@ -175,8 +175,8 @@ func (w *workerWrapper) run() {
 总结之后
 
 * 步骤1, Worker Run 无脑塞入 workerRequest
-* 步骤2, Pool.Process 阻塞等待 reqChan , 此时相当于挑选了一个 worker, 谁竞争拿到就用谁的 workerRequest
-* 步骤3, Pool.Process 里面 将 payload 塞入workerReuqst.jobChan 触发 Run 下一步执行
-* 步骤4, 执行对应的Worker.Process, worker执行下一步的Process
-* 步骤5. worker.Process(payload) 有结果塞进 workerRequest.retChan
-* 步骤6. pool.Process 阻塞的retChan 有响应， 就继续执行
+* 步骤2, Pool.Process 阻塞等待 reqChan , 此时相当于 Pool 挑选一个 worker, 谁竞争拿到就用哪一个 worker
+* 步骤3, Pool.Process 里面 将 payload 塞入 workerReuqst.jobChan 触发, Pool.Run 下一步执行
+* 步骤4, 执行对应的Worker.Process, Worker 执行下一步的Process
+* 步骤5. Worker.Process(payload) 有结果塞进 workerRequest.retChan
+* 步骤6. Pool.Process 阻塞的 retChan, 等待它有响应， 就继续执行
