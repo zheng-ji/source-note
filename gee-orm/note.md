@@ -118,7 +118,7 @@ func (s *Session) First(value interface{}) error {
 }
 ```
 
-// 链式操作
+// 链式操作, 继续返回 Session
 
 ```
 // Limit adds limit condition to clause
@@ -148,6 +148,36 @@ func (s *Session) CallMethod(method string, value interface{}) {
 	return
 }
 
+type Account struct {
+	ID       int `geeorm:"PRIMARY KEY"`
+	Password string
+}
+
+func (account *Account) BeforeInsert(s *Session) error {
+	log.Info("before inert", account)
+	account.ID += 1000
+	return nil
+}
+
+func (s *Session) Insert(values ...interface{}) (int64, error) {
+	recordValues := make([]interface{}, 0)
+	for _, value := range values {
+		s.CallMethod(BeforeInsert, value)
+		table := s.Model(value).RefTable()
+		s.clause.Set(clause.INSERT, table.Name, table.FieldNames)
+		recordValues = append(recordValues, table.RecordValues(value))
+	}
+
+	s.clause.Set(clause.VALUES, recordValues...)
+	sql, vars := s.clause.Build(clause.INSERT, clause.VALUES)
+	result, err := s.Raw(sql, vars...).Exec()
+	if err != nil {
+		return 0, err
+	}
+	s.CallMethod(AfterInsert, nil)
+	return result.RowsAffected()
+}
+
 ```
 
 Transaction 事务
@@ -163,7 +193,7 @@ type CommonDB interface {
 var _ CommonDB = (*sql.DB)(nil)
 var _ CommonDB = (*sql.Tx)(nil)
 
-// DB returns tx if a tx begins. otherwise return *sql.DB
+// DB returns tx if a tx begins. otherwise return *sql.DB, 通过CommDB 来判断是否有s.tx, 第一次初始化 s.tx 是在 s.Begin()
 func (s *Session) DB() CommonDB {
 	if s.tx != nil {
 		return s.tx
