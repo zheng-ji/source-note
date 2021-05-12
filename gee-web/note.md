@@ -1,5 +1,7 @@
 
-Day1
+### Day1
+
+朴素的逻辑，只要实现了 ServerHTTP 接口的 Struct，均可作为参数调用 http.ListenAndServe(
 
 ```
 type HandlerFunc func(http.ResponseWriter, *http.Request)
@@ -26,6 +28,11 @@ func (engine *Engine) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		fmt.Fprintf(w, "404 NOT FOUND: %s\n", req.URL)
 	}
 }
+
+// Run defines the method to start a http server
+func (engine *Engine) Run(addr string) (err error) {
+	return http.ListenAndServe(addr, engine)
+}
 ```
 
 Example
@@ -46,10 +53,11 @@ func main() {
 }
 ```
 
-Day2 With Context
+### Day2 With Context
 
-把 http.ResponseWriter, http.Request 囊括进 Context
-把 handlers map[string]HandlerFunc 囊括进 router
+* 把 http.ResponseWriter, http.Request 囊括进 Context
+
+* 把 handlers map[string]HandlerFunc 囊括进 router
 
 ```
 // Engine implement the interface of ServeHTTP
@@ -85,3 +93,40 @@ func main() {
 }
 ```
 
+# Day3
+将路径解析为节点，然后存储在router的roots节点之内, 这么做是了为解决匹配动态参数
+
+```
+key := method + "-" + pattern
+_, ok := r.roots[method]
+if !ok {
+    r.roots[method] = &node{}
+}
+r.roots[method].insert(pattern, parts, 0)
+r.handlers[key] = handler
+```
+
+Example
+
+```
+func TestGetRoute(t *testing.T) {
+	r := newTestRouter()
+	n, ps := r.getRoute("GET", "/hello/geektutu")
+
+	if n == nil {
+		t.Fatal("nil shouldn't be returned")
+	}
+
+	if n.pattern != "/hello/:name" {
+		t.Fatal("should match /hello/:name")
+	}
+
+	if ps["name"] != "geektutu" {
+		t.Fatal("name should be equal to 'geektutu'")
+	}
+
+	fmt.Printf("matched path: %s, params['name']: %s\n", n.pattern, ps["name"])
+}
+```
+
+trie.go 代码就比较烧脑，我写了写注释在代码层面上

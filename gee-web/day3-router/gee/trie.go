@@ -32,7 +32,9 @@ func (n *node) insert(pattern string, parts []string, height int) {
 }
 
 func (n *node) search(parts []string, height int) *node {
+	// 找到树的结尾，或者节点带有*
 	if len(parts) == height || strings.HasPrefix(n.part, "*") {
+		//如果不是树的结尾，pattern != "" 就会继续, 如果是树的结尾，就返回node
 		if n.pattern == "" {
 			return nil
 		}
@@ -40,6 +42,7 @@ func (n *node) search(parts []string, height int) *node {
 	}
 
 	part := parts[height]
+	// 找到符合part的节点列表
 	children := n.matchChildren(part)
 
 	for _, child := range children {
@@ -61,6 +64,7 @@ func (n *node) travel(list *([]*node)) {
 	}
 }
 
+// 找到一个Child
 func (n *node) matchChild(part string) *node {
 	for _, child := range n.children {
 		if child.part == part || child.isWild {
@@ -70,6 +74,7 @@ func (n *node) matchChild(part string) *node {
 	return nil
 }
 
+// 找到一系列Child
 func (n *node) matchChildren(part string) []*node {
 	nodes := make([]*node, 0)
 	for _, child := range n.children {
