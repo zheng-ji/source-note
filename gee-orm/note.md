@@ -1,4 +1,7 @@
+通过这份代码，知道如何通过 Reflect 的灵活操作来完成 ORM
 
+```
+// 每一列
 type Field struct {
 	Name string
 	Type string
@@ -7,24 +10,30 @@ type Field struct {
 
 // Schema represents a table of database
 type Schema struct {
-	Model      interface{}
-	Name       string
-	Fields     []*Field
-	FieldNames []string
-	fieldMap   map[string]*Field
+	Model      interface{} // 对应的接口
+	Name       string // 表名
+	Fields     []*Field // 多个列的指针
+	FieldNames []string // 列的名
+	fieldMap   map[string]*Field // 通过FieldName 找到 列
 }
 
 type Session struct {
 	db       *sql.DB
-	dialect  dialect.Dialect
-	refTable *schema.Schema
-	sql      strings.Builder
-	sqlVars  []interface{}
+	dialect  dialect.Dialect // 适应不同DB 引擎的改造方法
+	refTable *schema.Schema // 对应的Schema
+	sql      strings.Builder // SQL语句
+	sqlVars  []interface{}  // SQL变量
 }
 
 type Engine struct {
 	db      *sql.DB
 	dialect dialect.Dialect
+}
+
+// Clause contains SQL conditions
+type Clause struct {
+	sql     map[Type]string
+	sqlVars map[Type][]interface{}
 }
 
 
@@ -94,3 +103,138 @@ func (s *Session) Find(values interface{}) error {
 
 	return rows.Close()
 }
+
+func (s *Session) First(value interface{}) error {
+	dest := reflect.Indirect(reflect.ValueOf(value))
+	destSlice := reflect.New(reflect.SliceOf(dest.Type())).Elem()
+	if err := s.Limit(1).Find(destSlice.Addr().Interface()); err != nil {
+		return err
+	}
+	if destSlice.Len() == 0 {
+		return errors.New("NOT FOUND")
+	}
+	dest.Set(destSlice.Index(0))
+	return nil
+}
+```
+
+// 链式操作
+
+```
+// Limit adds limit condition to clause
+func (s *Session) Limit(num int) *Session {
+	s.clause.Set(clause.LIMIT, num)
+	return s
+}
+
+```
+
+Hook 操作 
+```
+// CallMethod calls the registered hooks
+func (s *Session) CallMethod(method string, value interface{}) {
+	fm := reflect.ValueOf(s.RefTable().Model).MethodByName(method)
+	if value != nil {
+		fm = reflect.ValueOf(value).MethodByName(method)
+	}
+	param := []reflect.Value{reflect.ValueOf(s)}
+	if fm.IsValid() {
+		if v := fm.Call(param); len(v) > 0 {
+			if err, ok := v[0].Interface().(error); ok {
+				log.Error(err)
+			}
+		}
+	}
+	return
+}
+
+```
+
+Transaction 事务
+
+```
+// CommonDB is a minimal function set of db
+type CommonDB interface {
+	Query(query string, args ...interface{}) (*sql.Rows, error)
+	QueryRow(query string, args ...interface{}) *sql.Row
+	Exec(query string, args ...interface{}) (sql.Result, error)
+}
+
+var _ CommonDB = (*sql.DB)(nil)
+var _ CommonDB = (*sql.Tx)(nil)
+
+// DB returns tx if a tx begins. otherwise return *sql.DB
+func (s *Session) DB() CommonDB {
+	if s.tx != nil {
+		return s.tx
+	}
+	return s.db
+}
+
+// Exec raw sql with sqlVars
+func (s *Session) Exec() (result sql.Result, err error) {
+	defer s.Clear()
+	log.Info(s.sql.String(), s.sqlVars)
+	if result, err = s.DB().Exec(s.sql.String(), s.sqlVars...); err != nil {
+		log.Error(err)
+	}
+	return
+}
+
+// Begin a transaction
+func (s *Session) Begin() (err error) {
+	log.Info("transaction begin")
+	if s.tx, err = s.db.Begin(); err != nil {
+		log.Error(err)
+		return
+	}
+	return
+}
+
+// Commit a transaction
+func (s *Session) Commit() (err error) {
+	log.Info("transaction commit")
+	if err = s.tx.Commit(); err != nil {
+		log.Error(err)
+	}
+	return
+}
+
+// Rollback a transaction
+func (s *Session) Rollback() (err error) {
+	log.Info("transaction rollback")
+	if err = s.tx.Rollback(); err != nil {
+		log.Error(err)
+	}
+	return
+
+// 逻辑函数
+type TxFunc func(*session.Session) (interface{}, error)
+
+// 事务的Wrapper
+func (engine *Engine) Transaction(f TxFunc) (result interface{}, err error) {
+	s := engine.NewSession()
+	if err := s.Begin(); err != nil {
+		return nil, err
+	}
+	defer func() {
+		if p := recover(); p != nil {
+			_ = s.Rollback()
+			panic(p) // re-throw panic after Rollback
+		} else if err != nil {
+			_ = s.Rollback() // err is non-nil; don't change it
+		} else {
+			err = s.Commit() // err is nil; if Commit returns error update err
+		}
+	}()
+
+	return f(s)
+}
+
+// 实际调用逻辑
+_, err := engine.Transaction(func(s *session.Session) (result interface{}, err error) {
+        _ = s.Model(&User{}).CreateTable()
+        _, err = s.Insert(&User{"Tom", 18})
+        return nil, errors.New("Error")
+})
+```
