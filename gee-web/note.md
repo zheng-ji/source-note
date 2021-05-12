@@ -129,4 +129,4 @@ func TestGetRoute(t *testing.T) {
 }
 ```
 
-trie.go 代码就比较烧脑，我写了写注释在代码层面上
+trie.go 代码就比较烧脑，我写了注释在[代码上](https://github.com/zheng-ji/source-note/blob/main/gee-web/day3-router/gee/trie.go)
