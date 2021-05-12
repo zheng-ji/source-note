@@ -38,7 +38,7 @@ type Clause struct {
 
 
 func Parse(dest interface{}, d dialect.Dialect) *Schema {
-	//modelType := reflect.ValueOf(dest).Elem().Type()
+	//modelType := reflect.ValueOf(dest).Elem().Type()  这样写也是可以的。
 	modelType := reflect.Indirect(reflect.ValueOf(dest)).Type()
 	var tableName string
 	t, ok := dest.(ITableName)
@@ -71,16 +71,20 @@ func Parse(dest interface{}, d dialect.Dialect) *Schema {
 	return schema
 }
 
+// 调用例子
 schema := Parse(&User{}, TestDial)
+var TestDial, _ = dialect.GetDialect("sqlite3")
 
 // Find gets all eligible records
 func (s *Session) Find(values interface{}) error {
 	destSlice := reflect.Indirect(reflect.ValueOf(values))
-	// destSlice.Type().Elem() 获取切片的单个元素的类型 destType，使用 reflect.New() 方法创建一个 destType 的实例，作为 Model() 的入参，映射出表结构 RefTable()。
+	// destSlice.Type().Elem() 获取切片的单个元素的类型 destType
+    // 使用 reflect.New() 方法创建一个 destType 的实例，作为 Model() 的入参，映射出表结构 RefTable()。
 	destType := destSlice.Type().Elem()
 	table := s.Model(reflect.New(destType).Elem().Interface()).RefTable()
 
 	s.clause.Set(clause.SELECT, table.Name, table.FieldNames)
+    //  获取 sql, 和对应的 vars
 	sql, vars := s.clause.Build(clause.SELECT, clause.WHERE, clause.ORDERBY, clause.LIMIT)
 	rows, err := s.Raw(sql, vars...).QueryRows()
 	if err != nil {
@@ -91,13 +95,13 @@ func (s *Session) Find(values interface{}) error {
 		dest := reflect.New(destType).Elem()
 		var values []interface{}
 		for _, name := range table.FieldNames {
-			// FieldByName("X")表示查询struct中元素名为X的值, 此时要找到他的类型,就要Addr().Interface()
+			// FieldByName("X")表示查询struct中元素名为X的值, 此时要找到他的指针,就要Addr().Interface()
 			values = append(values, dest.FieldByName(name).Addr().Interface())
 		}
 		if err := rows.Scan(values...); err != nil {
 			return err
 		}
-        // 这样设置的
+        // 这样设置Slice的元素
 		destSlice.Set(reflect.Append(destSlice, dest))
 	}
 
@@ -148,6 +152,7 @@ func (s *Session) CallMethod(method string, value interface{}) {
 	return
 }
 
+// 调用的例子。
 type Account struct {
 	ID       int `geeorm:"PRIMARY KEY"`
 	Password string
@@ -162,7 +167,7 @@ func (account *Account) BeforeInsert(s *Session) error {
 func (s *Session) Insert(values ...interface{}) (int64, error) {
 	recordValues := make([]interface{}, 0)
 	for _, value := range values {
-		s.CallMethod(BeforeInsert, value)
+		s.CallMethod(BeforeInsert, value) // 这里调用了Hook
 		table := s.Model(value).RefTable()
 		s.clause.Set(clause.INSERT, table.Name, table.FieldNames)
 		recordValues = append(recordValues, table.RecordValues(value))
@@ -177,7 +182,6 @@ func (s *Session) Insert(values ...interface{}) (int64, error) {
 	s.CallMethod(AfterInsert, nil)
 	return result.RowsAffected()
 }
-
 ```
 
 Transaction 事务
@@ -247,6 +251,7 @@ func (engine *Engine) Transaction(f TxFunc) (result interface{}, err error) {
 	if err := s.Begin(); err != nil {
 		return nil, err
 	}
+    // 这段写法就很厉害了, 
 	defer func() {
 		if p := recover(); p != nil {
 			_ = s.Rollback()
@@ -258,13 +263,14 @@ func (engine *Engine) Transaction(f TxFunc) (result interface{}, err error) {
 		}
 	}()
 
+    // 调用用户逻辑，并符合返回要求
 	return f(s)
 }
 
 // 实际调用逻辑
 _, err := engine.Transaction(func(s *session.Session) (result interface{}, err error) {
-        _ = s.Model(&User{}).CreateTable()
-        _, err = s.Insert(&User{"Tom", 18})
-        return nil, errors.New("Error")
+    _ = s.Model(&User{}).CreateTable()
+    _, err = s.Insert(&User{"Tom", 18})
+    return nil, errors.New("Error")
 })
 ```
