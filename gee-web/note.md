@@ -4,6 +4,19 @@
 朴素的逻辑，只要实现了 ServerHTTP 接口的 Struct，均可作为参数调用 http.ListenAndServe(
 
 ```
+go.mod
+day1-http-base/base3/go.mod
+
+module example
+go 1.13
+require gee v0.0.0
+
+replace gee => ./gee
+在 go.mod 中使用 replace 将 gee 指向 ./gee
+从 go 1.11 版本开始，引用相对路径的 package 需要使用上述方式。
+```
+
+```
 type HandlerFunc func(http.ResponseWriter, *http.Request)
 
 type Engine struct {
@@ -58,6 +71,24 @@ func main() {
 * 把 http.ResponseWriter, http.Request 囊括进 Context
 
 * 把 handlers map[string]HandlerFunc 囊括进 router
+
+对Web服务来说，是根据*http.Request，构造响应 http.ResponseWriter。但是这两个对象提供的接口粒度太细，比如我们要构造一个完整的响应，需要考虑消息头(Header)和消息体(Body)，而 Header 包含了状态码(StatusCode)，消息类型(ContentType)等几乎每次请求都需要设置的信息。因此，如果不进行有效的封装，那么框架的用户将需要写大量重复，繁杂的代码，而且容易出错
+
+```
+func (c *Context) JSON(code int, obj interface{}) {
+    c.SetHeader("Content-Type", "application/json")
+    c.Status(code)
+    encoder := json.NewEncoder(c.Writer)
+    if err := encoder.Encode(obj); err != nil {
+        http.Error(c.Writer, err.Error(), 500)
+    }
+}
+
+c.JSON(http.StatusOK, gee.H{
+    "username": c.PostForm("username"),
+    "password": c.PostForm("password"),
+})
+```
 
 ```
 // Engine implement the interface of ServeHTTP
