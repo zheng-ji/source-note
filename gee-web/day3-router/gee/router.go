@@ -47,6 +47,9 @@ func (r *router) addRoute(method string, pattern string, handler HandlerFunc) {
 
 func (r *router) getRoute(method string, path string) (*node, map[string]string) {
 	searchParts := parsePattern(path)
+	fmt.Println("----begin searchparts----------")
+	fmt.Println(searchParts)
+	fmt.Println("----end searchparts----------")
 	params := make(map[string]string)
 	root, ok := r.roots[method]
 
